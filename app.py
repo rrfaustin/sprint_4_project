@@ -2,13 +2,45 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import plotly.express as px
-import altair as alt
-import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 
-df = pd.read_csv('preprocessed_data_vehicles_us.csv')
-df = df.drop(df.columns[0], axis=1)
+df = pd.read_csv('vehicles_us.csv')
+#df = df.drop(df.columns[0], axis=1)
+
+# Fill missing model_year by grouping by model and using the median year
+df['model_year'] = df.groupby('model')['model_year'].transform(lambda x: x.fillna(x.median()))
+# cylindres: group by model fill by median cylindres
+df['cylinders'] = df.groupby('model')['cylinders'].transform(lambda x: x.fillna(x.median()))
+# Function to safely calculate the median, returning a default value if all are NaN
+def safe_median(series, default_value=np.nan):
+    if series.isnull().all():
+        return default_value
+    else:
+        return series.median()
+#odometer: group by model year(or year+model) fill by median(mean) odometer
+# Fill missing odometer by grouping by model_year and using the median odometer
+df['odometer'] = df.groupby(['model', 'model_year'])['odometer'].transform(lambda x: x.fillna(safe_median(x)))
+# If there are still missing values in odometer, fill them by grouping only by model
+df['odometer'] = df.groupby('model')['odometer'].transform(lambda x: x.fillna(safe_median(x)))
+# If there are still missing values in odometer, fill them by the overall median
+global_median_odometer = df['odometer'].median()
+df['odometer'] = df['odometer'].fillna(global_median_odometer)
+#replace all nan in paimt_color with other.
+df['paint_color'] = df['paint_color'].fillna('other')
+#is_4wd fill in
+g = df['is_4wd'].median()
+df['is_4wd'] = df['is_4wd'].fillna(g)
+#car's age
+df.loc[:, 'age'] = 2024 - df.loc[:, 'model_year']
+#clean  up model year and the odometer column by converting to int.64
+df['model_year'] =df['model_year'].astype(int)
+df['odometer'] =df['odometer'].astype(int)
+#convert date_posted column to datetime format
+df['date_posted'] = pd.to_datetime(df['date_posted'])
+# split model column to create the first part of the string as the manufacturer and keep the sec part of the string as model.
+df[['manufacturer', 'model']] = df['model'].str.split(' ', n=1, expand=True)
+#move the manufacturer column to be close to the front of model to keep unison.
 
 
 st.title('Used Vehicles Listed for Sale')
@@ -51,8 +83,6 @@ filtered_df = df[(df['price'] >= price_range[0]) & (df['price'] <= price_range[1
 
 
 
-
-
 st.title('Odometer Vs.Price based on Manufacturer')
 st.write('This scatter plot reflects the comparison between pricing, and the mileage of the odometer based on the listed manufacturer.')
 fig = px.scatter(filtered_df, x="odometer", y="price", color="manufacturer", title="Odometer Readings vs. Price by Manufacturer")
@@ -66,3 +96,5 @@ st.write('Days listed in comparison to quantity listed per day.')
 # Create histogram of days listed
 fig = px.histogram(df, x="days_listed", title="Histogram of Days Listed")
 st.plotly_chart(fig)
+
+README.md
